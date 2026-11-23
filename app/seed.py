@@ -220,10 +220,12 @@ def seed_if_needed(db_path: str | None = None) -> None:
             VALUES ('system', '种子初始化', 'lab', 0, '首次启动写入临床试验访视样例')
             """
         )
-        try:
-            from app.services.gather_gate import seed_skew
-            seed_skew(db_path)
-        except Exception:
-            pass
         _meta_set(conn, "seeded", "1")
         _meta_set(conn, "seed_version", "clinic-1")
+    # 收齐闸诚实基线须在种子事务落库后另起连接写入，避免锁冲突被静默吞掉
+    try:
+        from app.services.gather_gate import seed_skew
+
+        seed_skew(db_path)
+    except Exception:
+        pass

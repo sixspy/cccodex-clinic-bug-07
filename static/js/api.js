@@ -33,3 +33,17 @@ export function escapeHtml(s) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
 }
+
+export async function fetchGate() {
+  try {
+    return await api('/api/gather_gate/dash');
+  } catch (e) {
+    return { chip: '收齐闸未知', state: 'UNKNOWN', cutover_fp: '', error: e.message };
+  }
+}
+
+export function gateChipHtml(gate, { withKey = false } = {}) {
+  const cls = gate.state === 'NAILED' ? 'ok' : (gate.state === 'READY' ? 'bad' : 'warn');
+  const key = withKey && gate.cutover_fp ? ` · 键号 ${escapeHtml(gate.cutover_fp)}` : '';
+  return `<span class="chip ${cls}" data-gate="${escapeHtml(gate.state || '')}">${escapeHtml(gate.chip || '收齐闸未知')}${key}</span>`;
+}

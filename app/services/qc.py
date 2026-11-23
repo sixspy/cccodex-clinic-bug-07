@@ -110,9 +110,10 @@ def _field_hints(quality: str, payload: str, required: list[str]) -> list[tuple[
 
 
 def scan_batch(batch_id: int, db_path: str | None = None) -> dict:
-    from app.services.gather_gate import paint_ok, commit_action
-    paint_ok(db_path)
-    commit_action({"scan_batch": batch_id}, db_path)
+    from app.services.gather_gate import assert_pipeline_open
+
+    # 质控扫描先过收齐闸：不得再把未收齐入库标合格、掩盖闸口
+    assert_pipeline_open(db_path)
     created = []
     with get_db(db_path) as conn:
         batch = conn.execute(

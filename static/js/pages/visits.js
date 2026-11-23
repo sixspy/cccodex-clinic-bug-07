@@ -1,10 +1,11 @@
-import { api, chip, escapeHtml } from '../api.js';
+import { api, chip, escapeHtml, fetchGate, gateChipHtml } from '../api.js';
 
 export async function renderVisits(el) {
-  const [batches, sites, protocols] = await Promise.all([
+  const [batches, sites, protocols, gate] = await Promise.all([
     api('/api/batches'),
     api('/api/sites'),
     api('/api/protocols?status=' + encodeURIComponent('生效')),
+    fetchGate(),
   ]);
   const siteOpts = (sites.items || [])
     .filter((s) => s.status !== '停用')
@@ -16,8 +17,8 @@ export async function renderVisits(el) {
 
   el.innerHTML = `
     <div class="card">
-      <h2><span class="chip" data-thick="gather_gate">收齐已亮</span> 访视清单抓取批次</h2>
-      <p class="muted">按试验中心开批次，模拟抓取访视行，合格行可入库，缺口行进入质控与补采。</p>
+      <h2>${gateChipHtml(gate)} 访视清单抓取批次</h2>
+      <p class="muted">按试验中心开批次，模拟抓取访视行，合格行可入库，缺口行进入质控与补采。收齐徽标实时读收齐闸：已收齐未钉定或已钉定时，抓取/入库会被闸口挡下。</p>
       <div class="row">
         <select id="siteId">${siteOpts}</select>
         <select id="protocolId"><option value="">默认生效方案</option>${protoOpts}</select>
@@ -76,12 +77,13 @@ export async function renderVisits(el) {
   const showErr = (msg) => { detail.innerHTML = `<p class="err">${escapeHtml(msg)}</p>`; };
 
   async function loadDetail(id) {
-    const b = await api(`/api/batches/${id}`);
+    const [b, gateNow] = await Promise.all([api(`/api/batches/${id}`), fetchGate()]);
     const qs = b.quality_stats || {};
     detail.innerHTML = `
       <div class="row">
         <strong>${escapeHtml(b.batch_code)}</strong>
         ${chip(b.status)}
+        ${gateChipHtml(gateNow)}
         <span class="muted">${escapeHtml(b.site_name)} · 方案 ${escapeHtml(b.protocol_title || '-')}</span>
       </div>
       <div class="grid">

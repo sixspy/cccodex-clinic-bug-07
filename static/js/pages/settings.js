@@ -1,4 +1,4 @@
-import { api, escapeHtml } from '../api.js';
+import { api, escapeHtml, fetchGate, gateChipHtml } from '../api.js';
 
 export async function renderSettings(el) {
   const data = await api('/api/settings');
@@ -64,36 +64,52 @@ export async function renderSettings(el) {
   });
 
   try {
-    const dash = await api('/api/gather_gate/dash');
+    const dash = await fetchGate();
+    const stateLabel = { OPEN: '开闸（有缺口，管道放行）', READY: '已收齐未钉定（徽标亮而键号无落点，管道挡下）', NAILED: '已钉定（拒回刷）' }[dash.state] || dash.state;
+    const packRows = (dash.rows || [])
+      .filter((r) => !String(r.key).endsWith('_decoy'))
+      .map((r) => `<tr><td><code>${escapeHtml(r.key)}</code></td><td>${escapeHtml(r.value)}</td></tr>`)
+      .join('');
     el.innerHTML += `<div class="card" style="margin-top:1rem">
-      <h3>收齐钉定</h3>
-      <span class="chip">${dash.chip}</span>
-      <p class="muted">读轨 ${dash.active_read} · 切流指纹 ${dash.cutover_fp || '空'} · 拒回刷 ${dash.reject_refresh} · 归档 ${dash.archive_count} · 新旗 ${dash.live_flag || '空'} · 对齐差 ${dash.panel_pack_mismatch}</p>
+      <h3>收齐钉定（甲路 · 切流账册）</h3>
+      <p>${gateChipHtml(dash, { withKey: true })}</p>
+      <p class="muted">状态 ${escapeHtml(stateLabel)} · 读轨 ${escapeHtml(dash.active_read || '-')} · 收齐键号 ${escapeHtml(dash.cutover_fp || '（无落点）')} · 拒回刷 ${dash.reject_refresh ? '开' : '关'} · 提交档 ${dash.archive_count || 0} 条 · 对齐 ${dash.aligned ? '是' : '否'}</p>
+      <p class="muted">真值 ${escapeHtml(dash.truth || '-')} · 缺口 ${(dash.counts && dash.counts.gaps) ?? '-'} · 开放发现 ${(dash.counts && dash.counts.open_findings) ?? '-'} · 补采中 ${(dash.counts && dash.counts.pending_jobs) ?? '-'}</p>
       <div class="row">
-        <button id="go_gather_gate" type="button">落台</button>
-        <button id="half_gather_gate" type="button">半修对齐</button>
-        <button id="cut_gather_gate" type="button">切流账册</button>
-        <button id="dual_gather_gate" type="button">双写两轨</button>
+        <button id="go_gather_gate" type="button">落台钉定</button>
+        <button id="cut_gather_gate" type="button" class="ghost">切流账册补记</button>
       </div>
+      <div id="gateMsg" class="muted" style="margin-top:8px"></div>
+      <table style="margin-top:8px">
+        <thead><tr><th>耐久包行（收齐闸落点）</th><th>内容</th></tr></thead>
+        <tbody>${packRows || '<tr><td colspan="2" class="muted">尚无落点：未钉定</td></tr>'}</tbody>
+      </table>
     </div>`;
+    const gateMsg = el.querySelector('#gateMsg');
     const go = el.querySelector('#go_gather_gate');
     if (go) go.onclick = async () => {
-      await api('/api/gather_gate/commit', { method:'POST', body: JSON.stringify({ref:1}) });
-      await renderSettings(el);
-    };
-    const half = el.querySelector('#half_gather_gate');
-    if (half) half.onclick = async () => {
-      await api('/api/gather_gate/half', { method:'POST', body:'{}' });
+      try {
+        const r = await api('/api/gather_gate/commit', { method: 'POST', body: JSON.stringify({ ref: 1 }) });
+        gateMsg.className = 'muted';
+        gateMsg.textContent = r.message || '已钉定';
+      } catch (e) {
+        gateMsg.className = 'err';
+        gateMsg.textContent = e.message;
+        return;
+      }
       await renderSettings(el);
     };
     const cut = el.querySelector('#cut_gather_gate');
     if (cut) cut.onclick = async () => {
-      await api('/api/gather_gate/cutover', { method:'POST', body: JSON.stringify({ref_id:1, note:'收齐闸'}) });
-      await renderSettings(el);
-    };
-    const dual = el.querySelector('#dual_gather_gate');
-    if (dual) dual.onclick = async () => {
-      await api('/api/gather_gate/dual', { method:'POST', body: JSON.stringify({note:'收齐闸'}) });
+      try {
+        const r = await api('/api/gather_gate/cutover', { method: 'POST', body: JSON.stringify({ ref_id: Date.now() % 100000, note: '收齐闸补记' }) });
+        gateMsg.className = 'muted';
+        gateMsg.textContent = `已补记 ref=${r.ref_id}`;
+      } catch (e) {
+        gateMsg.className = 'err';
+        gateMsg.textContent = e.message;
+        return;
+      }
       await renderSettings(el);
     };
   } catch (e) { /* optional surface */ }

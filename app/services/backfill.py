@@ -65,9 +65,13 @@ def get_job(job_id: int, db_path: str | None = None) -> dict:
 
 
 def enqueue_from_row(row_id: int, db_path: str | None = None) -> dict:
+    from app.services.gather_gate import assert_pipeline_open
+
     row_id = int(row_id or 0)
     if row_id <= 0:
         raise ServiceError("必须指定访视行")
+    # 补采排队先过收齐闸：不得按虚收齐键号漂偏队列
+    assert_pipeline_open(db_path)
     with get_db(db_path) as conn:
         row = conn.execute("SELECT * FROM visit_rows WHERE id=?", (row_id,)).fetchone()
         if not row:
@@ -109,6 +113,10 @@ def enqueue_from_row(row_id: int, db_path: str | None = None) -> dict:
 
 
 def enqueue_gaps_for_batch(batch_id: int, db_path: str | None = None) -> dict:
+    from app.services.gather_gate import assert_pipeline_open
+
+    # 批量排队同样先过闸，避免拧花态下静默全跳过
+    assert_pipeline_open(db_path)
     with get_db(db_path) as conn:
         rows = conn.execute(
             """
@@ -136,6 +144,8 @@ def enqueue_gaps_for_batch(batch_id: int, db_path: str | None = None) -> dict:
 
 
 def run_job(job_id: int, succeed: bool = True, db_path: str | None = None) -> dict:
+    from app.services.gather_gate import assert_pipeline_open
+
     max_attempt = settings_svc.get_int("backfill_max_attempt", 3, db_path=db_path)
     with get_db(db_path) as conn:
         job = conn.execute(
@@ -147,6 +157,8 @@ def run_job(job_id: int, succeed: bool = True, db_path: str | None = None) -> di
             return get_job(job_id, db_path)
         if job["status"] == "执行中":
             raise ServiceError("任务正在执行中")
+        # 执行补采会改写访视行，钉定/拧花态下拒回刷
+        assert_pipeline_open(db_path)
         if job["attempt"] > max_attempt:
             conn.execute(
                 """
@@ -253,6 +265,10 @@ def run_job(job_id: int, succeed: bool = True, db_path: str | None = None) -> di
 
 
 def retry_job(job_id: int, db_path: str | None = None) -> dict:
+    from app.services.gather_gate import assert_pipeline_open
+
+    # 重试会把失败任务重新排队，钉定/拧花态下拒回刷
+    assert_pipeline_open(db_path)
     with get_db(db_path) as conn:
         job = conn.execute(
             "SELECT * FROM backfill_jobs WHERE id=?", (job_id,)

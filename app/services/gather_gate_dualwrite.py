@@ -1,13 +1,17 @@
-"""收齐闸双写两轨：应将旧档送入只读归档并改读新旗；当前只亮镜像芯片。"""
+"""收齐闸双写两轨（乙路）：本题未择定。骨架保留为只读历史档，写侧拒动。
+
+择边结论：读轨落定甲路切流账册（cutover_book），两轨不并存；
+乙路不得再亮镜像芯片、不得迁入 live_flag。
+"""
 from __future__ import annotations
 
 from app.db import get_db
+from app.services.errors import ServiceError
 from app.services.gather_gate import (
     active_read_ref,
     archive_rows,
     dashboard,
     live_flag,
-    paint_ok,
     truth_flag,
 )
 
@@ -17,46 +21,24 @@ _BAD = "未收齐"
 _TITLE = "收齐闸"
 
 
-def _meta_set(conn, key: str, value: str) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
-        (key, value),
-    )
-
-
 def dual_chip(db_path: str | None = None) -> str:
     with get_db(db_path) as conn:
         row = conn.execute(
             "SELECT value FROM meta WHERE key=?",
             (f"{_SLUG}_dual_chip",),
         ).fetchone()
-        return row["value"] if row else _OK
-
-
-def seed_dual(db_path: str | None = None) -> None:
-    with get_db(db_path) as conn:
-        _meta_set(conn, f"{_SLUG}_dual_chip", _OK)
-        _meta_set(conn, f"{_SLUG}_dual_truth", _BAD)
-        # missing archive move + live_flag + active_read=live_flag
+        return row["value"] if row else _BAD
 
 
 def apply_dualwrite(note: str = "", db_path: str | None = None) -> dict:
-    seed_dual(db_path)
-    paint_ok(db_path)
-    with get_db(db_path) as conn:
-        _meta_set(conn, f"{_SLUG}_dual_note", note or _TITLE)
-        # intentionally skip archive_% and live_flag rewrite
-    return {
-        "dual_chip": dual_chip(db_path),
-        "truth": truth_flag(db_path),
-        "active_read": active_read_ref(db_path),
-        "archive_count": len(archive_rows(db_path)),
-        "live_flag": live_flag(db_path),
-    }
+    """乙路写侧未择定：两轨不并存，拒动。"""
+    raise ServiceError(
+        f"{_TITLE}乙路双写未择定：读轨已落定甲路切流账册，两轨不并存", 409
+    )
 
 
 def dual_board(db_path: str | None = None) -> dict:
-    seed_dual(db_path)
+    """只读乙路历史档面，供审计对照；无任何回写。"""
     dash = dashboard(db_path)
     return {
         "dual_chip": dual_chip(db_path),
@@ -65,15 +47,14 @@ def dual_board(db_path: str | None = None) -> dict:
         "archive": archive_rows(db_path),
         "live_flag": live_flag(db_path),
         "dash": dash,
-        "fate": "dualwrite",
-        "panel_pack_mismatch": True,
-        "title": f"{_TITLE}双写面",
+        "fate": "dualwrite_decommissioned",
+        "panel_pack_mismatch": dash["panel_pack_mismatch"],
+        "title": f"{_TITLE}双写面（乙路未择定）",
     }
 
 
 def half_dual(db_path: str | None = None) -> dict:
-    paint_ok(db_path)
-    seed_dual(db_path)
+    """只读对照：乙路不再亮镜像芯片。"""
     return {
         "dual_chip": dual_chip(db_path),
         "truth": truth_flag(db_path),

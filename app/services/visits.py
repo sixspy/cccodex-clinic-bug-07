@@ -276,9 +276,10 @@ def mock_crawl(
     mix_bad: bool = True,
     db_path: str | None = None,
 ) -> dict:
-    from app.services.gather_gate import commit_action, gate_allows_pipeline
-    commit_action({"batch_id": batch_id, "count": count}, db_path)
-    _ = gate_allows_pipeline(db_path)
+    from app.services.gather_gate import assert_pipeline_open
+
+    # 抓取管道先过收齐闸：徽标拧花或闸已钉定时不得放大未收齐入库
+    assert_pipeline_open(db_path)
     count = max(1, min(30, int(count or 5)))
     created = []
     with get_db(db_path) as conn:
@@ -461,6 +462,10 @@ def set_row_status(row_id: int, status: str, db_path: str | None = None) -> dict
 
 
 def ingest_ok_rows(batch_id: int, db_path: str | None = None) -> dict:
+    from app.services.gather_gate import assert_pipeline_open
+
+    # 合格入库先过收齐闸：徽标亮而键号无落点时挡未收齐入库
+    assert_pipeline_open(db_path)
     with get_db(db_path) as conn:
         batch = conn.execute(
             "SELECT * FROM visit_batches WHERE id=?", (batch_id,)
